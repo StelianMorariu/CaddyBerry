@@ -1,0 +1,2 @@
+# CaddyBerry
+Simple Caddyfile editor
