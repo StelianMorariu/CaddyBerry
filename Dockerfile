@@ -1,5 +1,8 @@
 FROM node:20-alpine AS builder
 
+ARG APP_VERSION
+ENV APP_VERSION=${APP_VERSION}
+
 WORKDIR /app
 
 # Copy package files

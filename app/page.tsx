@@ -18,6 +18,7 @@ export default function Home() {
         </svg>
         <h1 className="text-lg font-semibold tracking-tight">CaddyBerry</h1>
         <span className="text-xs text-zinc-500 ml-1">Caddyfile Editor</span>
+        <span className="text-xs text-zinc-600 ml-auto font-mono">v{process.env.APP_VERSION}</span>
       </header>
 
       {/* Editor area */}
