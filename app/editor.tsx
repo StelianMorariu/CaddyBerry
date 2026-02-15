@@ -22,6 +22,15 @@ export default function CaddyEditor() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    setIsMobile(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const savedContentRef = useRef("");
   const { toasts, push, dismiss, resolve } = useToasts();
@@ -243,17 +252,19 @@ export default function CaddyEditor() {
           beforeMount={handleBeforeMount}
           onMount={handleEditorMount}
           options={{
-            fontSize: 14,
+            fontSize: isMobile ? 12 : 14,
             fontFamily:
               "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
             automaticLayout: true,
             minimap: { enabled: false },
             lineNumbers: "on",
             scrollBeyondLastLine: false,
-            wordWrap: "on",
+            wordWrap: isMobile ? "off" : "on",
             tabSize: 4,
             insertSpaces: false,
             padding: { top: 12 },
+            scrollbar: { alwaysConsumeMouseWheel: false },
+            fastScrollSensitivity: 3,
           }}
           loading={
             <div className="flex items-center justify-center h-full text-zinc-500">
