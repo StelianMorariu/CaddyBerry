@@ -4,7 +4,7 @@ export default function Home() {
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <header className="flex items-center gap-3 px-5 py-3 border-b border-zinc-800 bg-zinc-900">
+      <header className="flex items-center gap-3 px-5 py-3 border-b border-zinc-800 bg-zinc-900 xl:px-8 2xl:px-16">
         <svg
           width="28"
           height="28"
@@ -21,8 +21,8 @@ export default function Home() {
         <span className="text-xs text-zinc-600 ml-auto font-mono">v{process.env.APP_VERSION}</span>
       </header>
 
-      {/* Editor area */}
-      <main className="flex-1 min-h-0">
+      {/* Editor area — centered with horizontal padding on large screens */}
+      <main className="flex-1 min-h-0 w-full max-w-screen-2xl mx-auto xl:px-18 2xl:px-36">
         <CaddyEditor />
       </main>
     </div>

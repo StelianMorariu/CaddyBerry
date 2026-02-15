@@ -1,27 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Editor, { type OnMount } from "@monaco-editor/react";
+import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
 import type { editor } from "monaco-editor";
-import OutputPanel, { type OutputLine } from "./output-panel";
+import ToastContainer, { useToasts } from "./toast";
+import {
+  LANGUAGE_ID,
+  languageConfig,
+  monarchTokens,
+  THEME_ID,
+  defineTheme,
+} from "./caddyfile-lang";
 
-type Status = {
-  type: "idle" | "loading" | "success" | "error";
-  message?: string;
+type OutputLine = {
+  type: "error" | "warning" | "success" | "info";
+  text: string;
 };
 
 export default function CaddyEditor() {
   const [content, setContent] = useState("");
-  const [status, setStatus] = useState<Status>({ type: "loading" });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const [output, setOutput] = useState<OutputLine[]>([]);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const savedContentRef = useRef("");
-
-  /** Replace all output with new lines. */
-  const replaceOutput = useCallback((...lines: OutputLine[]) => {
-    setOutput(lines);
-  }, []);
+  const { toasts, push, dismiss, resolve } = useToasts();
 
   // ───── Load the Caddyfile on mount ─────
   useEffect(() => {
@@ -29,19 +32,26 @@ export default function CaddyEditor() {
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
-          setStatus({ type: "error", message: data.error });
-          replaceOutput({ type: "error", text: data.error });
+          push("error", data.error);
         } else {
           setContent(data.content);
           savedContentRef.current = data.content;
-          setStatus({ type: "idle" });
         }
+        setLoading(false);
       })
       .catch((err) => {
-        setStatus({ type: "error", message: err.message });
-        replaceOutput({ type: "error", text: err.message });
+        push("error", err.message);
+        setLoading(false);
       });
-  }, [replaceOutput]);
+  }, [push]);
+
+  // ───── Register Caddyfile language before Monaco mounts ─────
+  const handleBeforeMount: BeforeMount = (monaco) => {
+    monaco.languages.register({ id: LANGUAGE_ID });
+    monaco.languages.setLanguageConfiguration(LANGUAGE_ID, languageConfig);
+    monaco.languages.setMonarchTokensProvider(LANGUAGE_ID, monarchTokens);
+    defineTheme(monaco);
+  };
 
   const handleEditorMount: OnMount = (ed) => {
     editorRef.current = ed;
@@ -54,11 +64,7 @@ export default function CaddyEditor() {
   };
 
   /**
-   * Core pipeline shared by Save and Apply:
-   *  1. Format (caddy fmt)
-   *  2. Validate (POST to /load to check errors/warnings)
-   *  3. Save to disk
-   * Returns { ok, lines, formatted } so the caller can decide whether to reload.
+   * Core pipeline: format → validate → save to disk.
    */
   const formatValidateSave = useCallback(async (): Promise<{
     ok: boolean;
@@ -87,12 +93,7 @@ export default function CaddyEditor() {
     }
 
     if (typeof fmtData.formatted === "string") {
-      const changed = fmtData.formatted !== current;
       current = fmtData.formatted;
-      lines.push({
-        type: "info",
-        text: changed ? "Formatted Caddyfile." : "Already formatted.",
-      });
     }
 
     // ── 2. Validate ──
@@ -132,50 +133,13 @@ export default function CaddyEditor() {
       return { ok: false, lines, formatted: current };
     }
 
-    lines.push({ type: "success", text: "Caddyfile saved to disk." });
     return { ok: true, lines, formatted: current };
   }, [content]);
 
-  // ───── Save: format → validate → save to disk ─────
-  const save = useCallback(async () => {
-    setStatus({ type: "loading", message: "Saving..." });
-    replaceOutput({ type: "info", text: "Formatting, validating & saving..." });
-
-    try {
-      const { ok, lines, formatted } = await formatValidateSave();
-
-      // Always update editor with formatted content
-      setContent(formatted);
-
-      if (ok) {
-        savedContentRef.current = formatted;
-        setDirty(false);
-        setStatus({ type: "success", message: "Saved" });
-      } else {
-        // Still mark dirty relative to what's on disk
-        setDirty(formatted !== savedContentRef.current);
-        const hasError = lines.some((l) => l.type === "error");
-        setStatus({
-          type: "error",
-          message: hasError ? "Save failed" : "Saved with warnings",
-        });
-      }
-
-      replaceOutput(...lines);
-    } catch (err) {
-      const msg = (err as Error).message;
-      setStatus({ type: "error", message: msg });
-      replaceOutput({ type: "error", text: msg });
-    }
-  }, [formatValidateSave, replaceOutput]);
-
-  // ───── Apply: format → validate → save to disk → reload Caddy ─────
+  // ───── Apply: format → validate → save → reload Caddy ─────
   const apply = useCallback(async () => {
-    setStatus({ type: "loading", message: "Applying..." });
-    replaceOutput({
-      type: "info",
-      text: "Formatting, validating, saving & reloading...",
-    });
+    setBusy(true);
+    const toastId = push("loading", "Applying configuration...");
 
     try {
       const { ok, lines, formatted } = await formatValidateSave();
@@ -185,8 +149,13 @@ export default function CaddyEditor() {
 
       if (!ok) {
         setDirty(formatted !== savedContentRef.current);
-        setStatus({ type: "error", message: "Apply failed" });
-        replaceOutput(...lines);
+        const errors = lines.filter((l) => l.type === "error");
+        resolve(toastId, "error", errors[0]?.text || "Apply failed");
+        // Show additional warnings as separate toasts
+        for (const w of lines.filter((l) => l.type === "warning")) {
+          push("error", w.text);
+        }
+        setBusy(false);
         return;
       }
 
@@ -202,96 +171,82 @@ export default function CaddyEditor() {
 
       if (Array.isArray(reloadData.warnings)) {
         for (const w of reloadData.warnings) {
-          lines.push({ type: "warning", text: w });
+          push("info", w);
         }
       }
 
       if (!reloadRes.ok) {
-        lines.push({
-          type: "error",
-          text: reloadData.error || "Failed to reload Caddy.",
-        });
-        setStatus({ type: "error", message: "Reload failed" });
-        replaceOutput(...lines);
+        resolve(
+          toastId,
+          "error",
+          reloadData.error || "Failed to reload Caddy.",
+        );
+        setBusy(false);
         return;
       }
 
-      lines.push({ type: "success", text: "Caddy reloaded successfully." });
-      setStatus({ type: "success", message: "Applied" });
-      replaceOutput(...lines);
-    } catch (err) {
-      const msg = (err as Error).message;
-      setStatus({ type: "error", message: msg });
-      replaceOutput({ type: "error", text: msg });
-    }
-  }, [formatValidateSave, replaceOutput]);
+      resolve(toastId, "success", "Configuration applied");
 
-  // ───── Keyboard shortcut: Ctrl/Cmd+S → Save ─────
+      // Show warnings from earlier steps
+      for (const w of lines.filter((l) => l.type === "warning")) {
+        push("info", w.text);
+      }
+    } catch (err) {
+      resolve(toastId, "error", (err as Error).message);
+    }
+
+    setBusy(false);
+  }, [formatValidateSave, push, resolve]);
+
+  // ───── Keyboard shortcut: Ctrl/Cmd+S → Apply ─────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
         e.preventDefault();
-        save();
+        apply();
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [save]);
-
-  const statusColor =
-    status.type === "error"
-      ? "text-red-400"
-      : status.type === "success"
-        ? "text-green-400"
-        : status.type === "loading"
-          ? "text-yellow-400"
-          : "text-zinc-500";
+  }, [apply]);
 
   const btnBase =
     "px-4 py-1.5 text-sm font-medium rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors";
 
   return (
     <div className="flex flex-col h-full">
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
+
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/50">
-        <button
-          onClick={save}
-          disabled={status.type === "loading"}
-          className={`${btnBase} bg-zinc-700 hover:bg-zinc-600`}
-        >
-          Save
-        </button>
+        {dirty && (
+          <span className="text-xs text-amber-400">Unsaved changes</span>
+        )}
+
         <button
           onClick={apply}
-          disabled={status.type === "loading"}
-          className={`${btnBase} bg-emerald-700 hover:bg-emerald-600`}
+          disabled={busy || loading}
+          className={`${btnBase} bg-emerald-700 hover:bg-emerald-600 ml-auto`}
         >
           Apply
         </button>
-
-        <div className="flex items-center gap-2 ml-auto">
-          {dirty && (
-            <span className="text-xs text-amber-400">Unsaved changes</span>
-          )}
-          {status.message && (
-            <span className={`text-xs ${statusColor}`}>{status.message}</span>
-          )}
-        </div>
       </div>
 
       {/* ── Editor ── */}
       <div className="flex-1 min-h-0">
         <Editor
           height="100%"
-          defaultLanguage="plaintext"
-          theme="vs-dark"
+          defaultLanguage={LANGUAGE_ID}
+          theme={THEME_ID}
           value={content}
           onChange={handleChange}
+          beforeMount={handleBeforeMount}
           onMount={handleEditorMount}
           options={{
             fontSize: 14,
             fontFamily:
               "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+            automaticLayout: true,
             minimap: { enabled: false },
             lineNumbers: "on",
             scrollBeyondLastLine: false,
@@ -307,9 +262,6 @@ export default function CaddyEditor() {
           }
         />
       </div>
-
-      {/* ── Output panel ── */}
-      <OutputPanel lines={output} onClear={() => setOutput([])} />
     </div>
   );
 }
