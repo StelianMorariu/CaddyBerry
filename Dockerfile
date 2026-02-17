@@ -22,14 +22,15 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy built app and dependencies
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
+ENV NODE_ENV=production
+
+# Copy standalone output
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
 # Expose port
 EXPOSE 3000
 
 # Start the app
-CMD ["npm", "start"]
+CMD ["node", "server.js"]
