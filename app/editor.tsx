@@ -365,7 +365,7 @@ export default function CaddyEditor() {
             wordWrap: isMobile ? "off" : "on",
             tabSize: 4,
             insertSpaces: false,
-            padding: { top: 12 },
+            padding: { top: 12, bottom: 80 },
             scrollbar: { alwaysConsumeMouseWheel: false },
             fastScrollSensitivity: 3,
           }}
