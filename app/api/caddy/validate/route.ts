@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     // Use /adapt to validate without loading the config into Caddy.
     const res = await fetch(`${CADDY_ADMIN_URL}/adapt`, {
       method: "POST",
-      headers: { "Content-Type": "text/caddyfile" },
+      headers: { "Content-Type": "text/caddyfile", Origin: CADDY_ADMIN_URL },
       body,
     });
 

@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     // the original content when it's valid.
     const res = await fetch(`${CADDY_ADMIN_URL}/adapt`, {
       method: "POST",
-      headers: { "Content-Type": "text/caddyfile" },
+      headers: { "Content-Type": "text/caddyfile", Origin: CADDY_ADMIN_URL },
       body,
     });
 
