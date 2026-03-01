@@ -12,10 +12,70 @@ import {
   defineTheme,
 } from "./caddyfile-lang";
 
+const IS_DEV = process.env.IS_DEV === "true";
+
+// Sample Caddyfile content used when IS_DEV=true (mirrors Caddyfile-sample at repo root)
+const DEV_SAMPLE = `# Global options block — applies to the whole Caddy process
+{
+	email admin@example.com
+	admin localhost:2019
+
+	# Uncomment to disable automatic HTTPS (useful behind a reverse proxy)
+	# auto_https off
+}
+
+# ── Basic static file server ──────────────────────────────────────────────────
+example.com {
+	root * /var/www/html
+	file_server
+	encode gzip zstd
+
+	log {
+		output file /var/log/caddy/access.log
+	}
+}
+
+# ── Reverse proxy to a local app ──────────────────────────────────────────────
+api.example.com {
+	reverse_proxy localhost:8080 {
+		header_up Host {host}
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}
+
+# ── Multiple backends with load balancing ─────────────────────────────────────
+app.example.com {
+	reverse_proxy localhost:3001 localhost:3002 localhost:3003 {
+		lb_policy round_robin
+		health_uri /health
+		health_interval 10s
+	}
+}
+
+# ── Route-based proxying with matchers ───────────────────────────────────────
+portal.example.com {
+	handle /static/* {
+		root * /var/www/portal
+		file_server
+	}
+
+	handle /api/* {
+		reverse_proxy localhost:9000
+	}
+
+	handle {
+		reverse_proxy localhost:5173
+	}
+}
+`;
+
 type OutputLine = {
   type: "error" | "warning" | "success" | "info";
   text: string;
 };
+
+type DevSimulate = "success" | "failure";
 
 export default function CaddyEditor() {
   const [content, setContent] = useState("");
@@ -23,6 +83,7 @@ export default function CaddyEditor() {
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [devSimulate, setDevSimulate] = useState<DevSimulate>("success");
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 639px)");
@@ -37,6 +98,13 @@ export default function CaddyEditor() {
 
   // ───── Load the Caddyfile on mount ─────
   useEffect(() => {
+    if (IS_DEV) {
+      setContent(DEV_SAMPLE);
+      savedContentRef.current = DEV_SAMPLE;
+      setLoading(false);
+      return;
+    }
+
     fetch("/api/caddy/file")
       .then((res) => res.json())
       .then((data) => {
@@ -150,6 +218,24 @@ export default function CaddyEditor() {
     setBusy(true);
     const toastId = push("loading", "Applying configuration...");
 
+    // ── Dev mode: mock the full pipeline ──
+    if (IS_DEV) {
+      await new Promise((r) => setTimeout(r, 800));
+      if (devSimulate === "success") {
+        savedContentRef.current = content;
+        setDirty(false);
+        resolve(toastId, "success", "Configuration applied (dev mode)");
+      } else {
+        resolve(
+          toastId,
+          "error",
+          "Simulated failure: Caddy admin API unreachable",
+        );
+      }
+      setBusy(false);
+      return;
+    }
+
     try {
       const { ok, lines, formatted } = await formatValidateSave();
 
@@ -205,7 +291,7 @@ export default function CaddyEditor() {
     }
 
     setBusy(false);
-  }, [formatValidateSave, push, resolve]);
+  }, [formatValidateSave, push, resolve, devSimulate, content]);
 
   // ───── Keyboard shortcut: Ctrl/Cmd+S → Apply ─────
   useEffect(() => {
@@ -230,6 +316,23 @@ export default function CaddyEditor() {
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/50">
         {dirty && (
           <span className="text-xs text-amber-400">Unsaved changes</span>
+        )}
+
+        {/* ── Dev mode controls ── */}
+        {IS_DEV && (
+          <div className="flex items-center gap-2 ml-0">
+            <span className="text-xs font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30 select-none">
+              DEV
+            </span>
+            <select
+              value={devSimulate}
+              onChange={(e) => setDevSimulate(e.target.value as DevSimulate)}
+              className="text-xs bg-zinc-800 border border-zinc-700 text-zinc-300 rounded px-2 py-0.5 cursor-pointer focus:outline-none focus:border-zinc-500"
+            >
+              <option value="success">Simulate: Success</option>
+              <option value="failure">Simulate: Failure</option>
+            </select>
+          </div>
         )}
 
         <button
