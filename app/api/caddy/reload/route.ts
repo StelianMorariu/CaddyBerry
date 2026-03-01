@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
     const res = await fetch(`${CADDY_ADMIN_URL}/load`, {
       method: "POST",
-      headers: { "Content-Type": "text/caddyfile" },
+      headers: { "Content-Type": "text/caddyfile", Origin: CADDY_ADMIN_URL },
       body,
     });
 
