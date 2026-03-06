@@ -8,8 +8,11 @@ const CADDY_TLS_CHECK_HOST = process.env.CADDY_TLS_CHECK_HOST;
 
 export async function GET() {
   if (!CADDY_TLS_CHECK_HOST) {
+    console.log("[caddyberry] tls-check: CADDY_TLS_CHECK_HOST not set, skipping");
     return NextResponse.json({ skipped: true });
   }
+
+  console.log(`[caddyberry] tls-check: probing ${CADDY_TLS_CHECK_IP}:443 (Host: ${CADDY_TLS_CHECK_HOST})`);
 
   return new Promise<NextResponse>((resolve) => {
     const req = https.request(
@@ -25,12 +28,14 @@ export async function GET() {
       (res) => {
         // TLS handshake succeeded — any HTTP response means TLS is healthy
         res.resume();
+        console.log(`[caddyberry] tls-check: healthy (HTTP ${res.statusCode})`);
         resolve(NextResponse.json({ healthy: true }));
       },
     );
 
     req.on("timeout", () => {
       req.destroy();
+      console.warn("[caddyberry] tls-check: connection timed out");
       resolve(
         NextResponse.json(
           { healthy: false, error: "Connection timed out" },
@@ -40,6 +45,7 @@ export async function GET() {
     });
 
     req.on("error", (err) => {
+      console.warn(`[caddyberry] tls-check: TLS handshake failed — ${err.message}`);
       resolve(
         NextResponse.json(
           { healthy: false, error: err.message },
