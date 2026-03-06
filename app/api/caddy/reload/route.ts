@@ -24,14 +24,17 @@ export async function POST(request: Request) {
       } catch {
         if (text.trim()) error = text.trim();
       }
+      console.error(`[caddyberry] reload: Caddy rejected config — ${error}`);
       return NextResponse.json(
         { error, warnings: [] },
         { status: res.status }
       );
     }
 
+    console.log("[caddyberry] reload: configuration applied successfully");
     return NextResponse.json({ ok: true, warnings: [] });
   } catch (err) {
+    console.error(`[caddyberry] reload: failed to reach Caddy admin API — ${(err as Error).message}`);
     return NextResponse.json(
       {
         error: `Failed to reach Caddy admin API: ${(err as Error).message}`,

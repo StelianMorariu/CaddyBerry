@@ -19,6 +19,7 @@ function restartContainer(name: string): Promise<void> {
         res.resume();
         // 204 = success, 404 = container not found, others = error
         if (res.statusCode === 204) {
+          console.log(`[caddyberry] restart: container "${name}" restarted successfully`);
           resolve();
         } else {
           reject(new Error(`Docker API returned ${res.statusCode}`));
@@ -32,6 +33,8 @@ function restartContainer(name: string): Promise<void> {
 }
 
 export async function POST() {
+  console.log("[caddyberry] restart: probing Docker socket...");
+
   // Verify socket is reachable before promising a restart
   const socketReachable = await new Promise<boolean>((resolve) => {
     const probe = http.request(
@@ -46,24 +49,31 @@ export async function POST() {
         resolve(res.statusCode === 200);
       },
     );
-    probe.on("error", () => resolve(false));
+    probe.on("error", (err) => {
+      console.warn(`[caddyberry] restart: Docker socket unavailable — ${err.message}`);
+      resolve(false);
+    });
     probe.end();
   });
 
   if (!socketReachable) {
+    console.error("[caddyberry] restart: Docker socket not available, cannot restart container");
     return NextResponse.json(
       { error: "Docker socket not available" },
       { status: 503 },
     );
   }
 
+  console.log(`[caddyberry] restart: scheduling restart of container "${CADDY_CONTAINER_NAME}" in 1500ms`);
+
   // Respond immediately so the response travels back through Caddy before it restarts
   const response = NextResponse.json({ ok: true });
 
   // Schedule the actual restart after a short delay
   setTimeout(() => {
+    console.log(`[caddyberry] restart: issuing restart for container "${CADDY_CONTAINER_NAME}"...`);
     restartContainer(CADDY_CONTAINER_NAME).catch((err) => {
-      console.error("[caddyberry] Failed to restart container:", err.message);
+      console.error(`[caddyberry] restart: failed to restart container "${CADDY_CONTAINER_NAME}" — ${err.message}`);
     });
   }, 1500);
 

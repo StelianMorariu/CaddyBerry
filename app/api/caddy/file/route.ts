@@ -33,8 +33,10 @@ export async function POST(request: Request) {
     }
 
     await writeFile(CADDYFILE_PATH, content, "utf-8");
+    console.log(`[caddyberry] file: Caddyfile written to ${CADDYFILE_PATH}`);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    console.error(`[caddyberry] file: failed to write Caddyfile — ${(err as Error).message}`);
     return NextResponse.json(
       { error: `Failed to write Caddyfile: ${(err as Error).message}` },
       { status: 500 }
