@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Toast = {
   id: number;
-  type: "success" | "error" | "loading" | "info";
+  type: "success" | "error" | "loading" | "info" | "warning";
   message: string;
 };
 
@@ -38,6 +38,12 @@ const ICONS: Record<Toast["type"], React.ReactNode> = {
       <path d="M8 7v4M8 5v.01" stroke="#a1a1aa" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   ),
+  warning: (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M8 2L14.5 13.5H1.5L8 2Z" stroke="#f59e0b" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M8 6.5v3M8 11v.01" stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
 };
 
 function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
@@ -62,7 +68,9 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
         ? "border-emerald-500/30"
         : toast.type === "loading"
           ? "border-yellow-500/30"
-          : "border-zinc-700";
+          : toast.type === "warning"
+            ? "border-amber-500/30"
+            : "border-zinc-700";
 
   return (
     <div
@@ -102,7 +110,7 @@ export function useToasts() {
   }, []);
 
   /** Replace a loading toast with a final state. */
-  const resolve = useCallback((id: number, type: "success" | "error", message: string) => {
+  const resolve = useCallback((id: number, type: "success" | "error" | "warning", message: string) => {
     setToasts((prev) => prev.map((t) => (t.id === id ? { ...t, type, message } : t)));
   }, []);
 

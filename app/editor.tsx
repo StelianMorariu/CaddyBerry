@@ -84,6 +84,7 @@ export default function CaddyEditor() {
   const [dirty, setDirty] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [devSimulate, setDevSimulate] = useState<DevSimulate>("success");
+  const [tlsCriticalError, setTlsCriticalError] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 639px)");
@@ -280,11 +281,57 @@ export default function CaddyEditor() {
         return;
       }
 
-      resolve(toastId, "success", "Configuration applied");
-
       // Show warnings from earlier steps
       for (const w of lines.filter((l) => l.type === "warning")) {
         push("info", w.text);
+      }
+
+      // ── 5. TLS health check ──
+      const tlsRes = await fetch("/api/caddy/tls-check").catch(() => null);
+      const tlsData = tlsRes ? await tlsRes.json().catch(() => null) : null;
+
+      if (!tlsData || tlsData.skipped || tlsData.healthy) {
+        resolve(toastId, "success", "Configuration applied");
+      } else {
+        // TLS is corrupted — attempt auto-restart
+        resolve(toastId, "warning", "TLS cache corrupted — restarting Caddy...");
+
+        const restartRes = await fetch("/api/caddy/restart", { method: "POST" }).catch(() => null);
+
+        if (!restartRes || !restartRes.ok) {
+          // Docker socket unavailable — show banner immediately
+          setTlsCriticalError(true);
+          setBusy(false);
+          return;
+        }
+
+        // Poll for recovery (10s window, 1s interval)
+        const recoveryToastId = push("loading", "Waiting for Caddy to recover...");
+        const deadline = Date.now() + 10_000;
+        let recovered = false;
+
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 1000));
+          try {
+            const checkRes = await fetch("/api/caddy/tls-check");
+            if (!checkRes.ok) continue;
+            const checkData = await checkRes.json();
+            if (checkData.healthy) {
+              recovered = true;
+              break;
+            }
+          } catch {
+            // Caddy still restarting — CaddyBerry unreachable, keep retrying
+          }
+        }
+
+        dismiss(recoveryToastId);
+
+        if (recovered) {
+          push("success", "Caddy recovered — TLS is healthy");
+        } else {
+          setTlsCriticalError(true);
+        }
       }
     } catch (err) {
       resolve(toastId, "error", (err as Error).message);
@@ -311,6 +358,26 @@ export default function CaddyEditor() {
   return (
     <div className="flex flex-col h-full">
       <ToastContainer toasts={toasts} onDismiss={dismiss} />
+
+      {/* ── TLS critical error banner ── */}
+      {tlsCriticalError && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-950/60 border-b border-red-500/40">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" className="shrink-0">
+            <path d="M8 2L14.5 13.5H1.5L8 2Z" stroke="#f87171" strokeWidth="1.5" strokeLinejoin="round" />
+            <path d="M8 6.5v3M8 11v.01" stroke="#f87171" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+          <span className="text-sm text-red-300 flex-1">
+            TLS cache is still corrupted. Automatic recovery failed — please restart the Caddy container manually.
+          </span>
+          <button
+            onClick={() => setTlsCriticalError(false)}
+            className="text-red-400 hover:text-red-200 transition-colors shrink-0 text-lg leading-none"
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {/* ── Toolbar ── */}
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-zinc-800 bg-zinc-900/50">
