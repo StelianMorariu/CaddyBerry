@@ -293,7 +293,8 @@ export default function CaddyEditor() {
         resolve(toastId, "success", "Configuration applied");
       } else {
         // Restart fired — give Caddy time to go down then poll until it's back
-        resolve(toastId, "loading", "Restarting Caddy...");
+        resolve(toastId, "success", "Configuration applied");
+        const restartToastId = push("loading", "Restarting Caddy...");
         const deadline = Date.now() + 30_000;
         let back = false;
         while (Date.now() < deadline) {
@@ -305,7 +306,7 @@ export default function CaddyEditor() {
             // still restarting
           }
         }
-        resolve(toastId, back ? "success" : "error", back ? "Configuration applied" : "Caddy did not come back — restart manually");
+        resolve(restartToastId, back ? "success" : "error", back ? "Caddy is back" : "Caddy did not come back — restart manually");
       }
     } catch (err) {
       resolve(toastId, "error", (err as Error).message);
