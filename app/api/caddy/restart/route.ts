@@ -64,18 +64,13 @@ export async function POST() {
     );
   }
 
-  console.log(`[caddyberry] restart: scheduling restart of container "${CADDY_CONTAINER_NAME}" in 1500ms`);
+  console.log(`[caddyberry] restart: issuing restart for container "${CADDY_CONTAINER_NAME}"...`);
 
-  // Respond immediately so the response travels back through Caddy before it restarts
-  const response = NextResponse.json({ ok: true });
+  // Fire-and-forget: return 200 immediately so the response travels back through
+  // Caddy before it goes down. The actual restart happens in the background.
+  restartContainer(CADDY_CONTAINER_NAME).catch((err) => {
+    console.error(`[caddyberry] restart: failed to restart container "${CADDY_CONTAINER_NAME}" — ${(err as Error).message}`);
+  });
 
-  // Schedule the actual restart after a short delay
-  setTimeout(() => {
-    console.log(`[caddyberry] restart: issuing restart for container "${CADDY_CONTAINER_NAME}"...`);
-    restartContainer(CADDY_CONTAINER_NAME).catch((err) => {
-      console.error(`[caddyberry] restart: failed to restart container "${CADDY_CONTAINER_NAME}" — ${err.message}`);
-    });
-  }, 1500);
-
-  return response;
+  return NextResponse.json({ ok: true });
 }
