@@ -40,17 +40,18 @@ export async function POST() {
     const probe = http.request(
       {
         socketPath: DOCKER_SOCKET,
-        path: "/v1.41/ping",
+        path: "/_ping",
         method: "GET",
         timeout: 2000,
       },
       (res) => {
         res.resume();
+        console.log(`[caddyberry] restart: Docker socket ping returned ${res.statusCode}`);
         resolve(res.statusCode === 200);
       },
     );
     probe.on("error", (err) => {
-      console.warn(`[caddyberry] restart: Docker socket unavailable — ${err.message}`);
+      console.warn(`[caddyberry] restart: Docker socket ping error — ${err.message}`);
       resolve(false);
     });
     probe.end();
