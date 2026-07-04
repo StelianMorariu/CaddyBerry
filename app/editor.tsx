@@ -285,14 +285,11 @@ export default function CaddyEditor() {
         push("info", w.text);
       }
 
-      // ── 5. Restart Caddy (no-op if Docker socket not mounted) ──
-      const restartRes = await fetch("/api/caddy/restart", { method: "POST" }).catch(() => null);
-
-      if (!restartRes?.ok) {
-        // 503 = Docker socket not mounted, nothing to wait for
+      if (!reloadData.restarting) {
         resolve(toastId, "success", "Configuration applied");
       } else {
-        // Restart fired — give Caddy time to go down then poll until it's back
+        // TLS was unhealthy after reload — restart was fired server-side.
+        // Poll until CaddyBerry is reachable again.
         resolve(toastId, "success", "Configuration applied");
         const restartToastId = push("loading", "Restarting Caddy...");
         const deadline = Date.now() + 30_000;
